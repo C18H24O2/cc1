@@ -253,6 +253,19 @@ impl<'src> Lexer<'src> {
 	}
 
 	fn skip_comment(&mut self) {
-		todo!();
+		let r = &mut self.src_reader;
+		let mut prev_is_star = false;
+		while let Some(c) = r.get_char_and_advance() {
+			if c == b'/' {
+				if prev_is_star {
+					return;
+				}
+				prev_is_star = false;
+			}
+			else {
+				prev_is_star = c == b'*';
+			}
+		}
+		todo!("Unterminated C89 comment");
 	}
 }
