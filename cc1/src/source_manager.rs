@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use crate::{is_sep, is_quote};
-
 pub struct SourceManager<'src> {
 	/// The raw source
 	src: &'src str,
@@ -18,11 +16,8 @@ impl<'src> SourceManager<'src> {
 	}
 
 	#[inline]
-	pub fn get_source_iterator(&self) -> SourceIterator<'src> {
-		SourceIterator {
-			src_bytes: self.src.as_bytes(),
-			idx: 0
-		}
+	pub fn get_source_reader(&self) -> SourceReader<'src> {
+		SourceReader::from(self.src.as_bytes())
 	}
 
 	#[inline]
@@ -31,67 +26,80 @@ impl<'src> SourceManager<'src> {
 	}
 }
 
-pub struct SourceIterator<'src> {
-	src_bytes: &'src [u8],
-	idx: usize,
+pub struct SourceReader<'src> {
+	cursor: *const u8,
+	remaining: usize,
+	origin: *const u8,
+
+	// this phantom asserts the `cursor` and `origin` pointers will only remain valid
+	// as long as 'src is valid
+	phantom: std::marker::PhantomData<&'src [u8]>,
 }
 
-impl<'src> std::iter::Iterator for SourceIterator<'src> {
-	type Item = &'src str;
-
+impl<'src> SourceReader<'src> {
 	#[inline]
-	fn next(&mut self) -> Option<Self::Item> {
-		let start = self.idx;
-		let mut i = 0usize;
-		while let Some(&c) = self.src_bytes.get(start + i) {
-			if is_sep(c) {
-				let end = if i == 0 {
-					if !is_quote(c) {
-						// fetch only the separator
-						start + 1
-					}
-					else {
-						let mut j = i + 1;
-						let mut is_escape = false;
-						loop {
-							if let Some(&c_in_quote) = self.src_bytes.get(start + j) {
-								if c_in_quote == c && !is_escape {
-									// fetch the whole sequence in quotes, including the quotes.
-									// note: since this functions returns a slice into an already existing
-									// string, the escape character(s) will still be present
-									break start + j + 1;
-								}
-								is_escape = c_in_quote == b'\\' && !is_escape;
-								j += 1;
-							}
-							else {
-								todo!("Unterminated quote");
-							}
-						}
-					}
-				}
-				else {
-					// fetch the whole sequence preceeding the separator
-					start + i
-				};
-				self.idx = end;
-				// TODO: we should be able to do an unchecked fetch here
-				// let result = unsafe { self.src_bytes.get_unchecked(start..end) };
-				let result = &self.src_bytes[start..end];
-				// pretty sure this could be unchecked because the initial string is valid
-				// as long as we don't cut in the middle of a unicode scalar
-				return Some(str::from_utf8(result).unwrap());
-			}
-			i += 1;
+	fn from(src_bytes: &'src [u8]) -> SourceReader<'src> {
+		SourceReader {
+			cursor: src_bytes.as_ptr(),
+			phantom: std::marker::PhantomData,
+			remaining: src_bytes.len(),
+			origin: src_bytes.as_ptr()
 		}
-		None
 	}
-}
 
-impl<'src> SourceIterator<'src> {
 	#[inline]
 	pub fn get_source_location(&self) -> SourceLocation {
-		SourceLocation(self.idx)
+		// SAFETY: cursor will always be >= origin
+		let loc = unsafe { self.cursor.sub(self.origin as usize) } as usize;
+		SourceLocation(loc)
+	}
+
+	#[inline]
+	pub fn cursor_ptr(&self) -> *const u8 {
+		self.cursor
+	}
+
+	#[inline]
+	fn get_char_at_offset(&self, offs: usize) -> Option<u8> {
+		if self.remaining > offs {
+			// SAFETY: dereference is ensured to be inbounds because of the above check
+			unsafe { Some(*(self.cursor.add(offs))) }
+		}
+		else {
+			None
+		}
+	}
+
+	#[inline]
+	pub fn advance(&mut self) {
+		if self.remaining > 0 {
+			// SAFETY: we are guaranteed to remain inbounds because of the above check
+			self.cursor = unsafe { self.cursor.add(1) };
+			self.remaining -= 1;
+		}
+	}
+
+	#[inline]
+	pub fn get_char(&self) -> Option<u8> {
+		self.get_char_at_offset(0)
+	}
+
+	#[inline]
+	pub fn peek_next_char(&self) -> Option<u8> {
+		self.get_char_at_offset(1)
+	}
+
+	#[inline]
+	pub fn get_char_and_advance(&mut self) -> Option<u8> {
+		let chr = self.get_char();
+		self.advance();
+		chr
+	}
+
+	#[inline]
+	pub fn advance_and_get_char(&mut self) -> Option<u8> {
+		self.advance();
+		self.get_char()
 	}
 }
 
