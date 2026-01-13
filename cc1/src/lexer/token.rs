@@ -54,7 +54,7 @@ pub enum TokenKind<'a> {
 	Whitespace(&'a str),
 
 	/// A literal representing either a signed or unsigned integer with variable size
-	IntLit { value: u64, signed: bool, suffix: IntLitSuffix },
+	IntLit { value: u64, suffix: IntLitSuffix },
 	/// A literal representing either a float or double or long double
 	FloatLit { value: f64, suffix: FloatLitSuffix },
 

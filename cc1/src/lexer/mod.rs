@@ -203,7 +203,7 @@ impl<'src> Lexer<'src> {
 				_ => (),
 			}
 		}
-		TokenKind::IntLit { value: repr, signed: false, suffix: IntLitSuffix::None }
+		TokenKind::IntLit { value: repr, suffix: IntLitSuffix::None }
 	}
 
 	fn lex_whitespace(&mut self) -> TokenKind<'src> {
