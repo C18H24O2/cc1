@@ -48,6 +48,11 @@ impl<'src> SourceReader<'src> {
 	}
 
 	#[inline]
+	pub fn remaining(&self) -> usize {
+		self.remaining
+	}
+
+	#[inline]
 	pub fn get_source_location(&self) -> SourceLocation {
 		// SAFETY: cursor will always be >= origin
 		let loc = unsafe { self.cursor.sub(self.origin as usize) } as usize;
@@ -74,14 +79,31 @@ impl<'src> SourceReader<'src> {
 	pub fn advance(&mut self) {
 		if self.remaining > 0 {
 			// SAFETY: we are guaranteed to remain inbounds because of the above check
-			self.cursor = unsafe { self.cursor.add(1) };
-			self.remaining -= 1;
+			unsafe {
+				self.cursor = self.cursor.add(1);
+				self.remaining = self.remaining.unchecked_sub(1);
+			}
+		}
+	}
+
+	#[inline]
+	pub unsafe fn advance_unchecked(&mut self) {
+		// SAFETY: upheld by caller
+		unsafe {
+			self.cursor = self.cursor.add(1);
+			self.remaining = self.remaining.unchecked_sub(1);
 		}
 	}
 
 	#[inline]
 	pub fn get_char(&self) -> Option<u8> {
 		self.get_char_at_offset(0)
+	}
+
+	#[inline]
+	pub unsafe fn get_char_unchecked(&self) -> u8 {
+		// SAFETY: upheld by caller
+		unsafe { *self.cursor }
 	}
 
 	#[inline]
