@@ -76,6 +76,7 @@ impl<'src> Iterator for Lexer<'src> {
 				},
 				b';' => { r.advance(); TokenKind::Semicolon },
 				b':' => { r.advance(); TokenKind::Colon },
+				b'?' => { r.advance(); TokenKind::Question },
 
 				b'(' => { r.advance(); TokenKind::LParens },
 				b')' => { r.advance(); TokenKind::RParens },
@@ -218,7 +219,6 @@ impl<'src> Lexer<'src> {
 
 		let mut is_escaping = false;
 
-		// TODO: handle trigraphs
 		let (slice, end_of_file) = self.fetch_source_while(|c| {
 			if c == string_type {
 				if !is_escaping {

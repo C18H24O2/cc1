@@ -42,6 +42,8 @@ pub enum TokenKind<'a> {
 	Semicolon,
 	/// The literal `:`
 	Colon,
+	/// The literal `?`
+	Question,
 
 	Literal(&'a str),
 	/// A string literal wrapped in double quotes (`"`)
