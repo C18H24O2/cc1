@@ -6,7 +6,9 @@ use crate::source_manager::{SourceManager, SourceReader};
 pub struct Lexer<'src> {
 	src: &'src SourceManager<'src>,
 	src_reader: SourceReader<'src>,
-	returned_eof_already: bool
+	at_line_start: bool,
+	in_directive: bool,
+	returned_eof_already: bool,
 }
 
 macro_rules! c_ident_start_pat {
@@ -62,9 +64,20 @@ impl<'src> Iterator for Lexer<'src> {
 			};
 
 			let kind = match chr {
-				c_whitespace_pat!() => { self.skip_whitespace(); continue; },
+				c_whitespace_pat!() => {
+					self.skip_whitespace();
+					if !self.at_line_start || !self.in_directive {
+						continue;
+					}
+					self.in_directive = false;
+					TokenKind::EOD
+				},
 
-				b'#' => { r.advance(); TokenKind::Hash },
+				b'#' => {
+					r.advance();
+					self.parse_directive();
+					continue;
+				},
 
 				b',' => { r.advance(); TokenKind::Comma },
 				b'.' => match r.advance_and_get_char() {
@@ -134,6 +147,9 @@ impl<'src> Iterator for Lexer<'src> {
 				b'\'' | b'"' => self.lex_string(),
 				_ => panic!("Unhandled character {:?}", chr as char)
 			};
+			if kind != TokenKind::EOD {
+				self.at_line_start = false;
+			}
 			return Some(Token::new(kind, location))
 		}
 	}
@@ -144,6 +160,8 @@ impl<'src> Lexer<'src> {
 		Lexer {
 			src,
 			src_reader: src.get_source_reader(),
+			in_directive: false,
+			at_line_start: true,
 			returned_eof_already: false
 		}
 	}
@@ -246,10 +264,18 @@ impl<'src> Lexer<'src> {
 		}
 	}
 
-	#[inline]
+	/// Skips whitespaces in the stream and toggles `at_line_start` if a
+	/// new-line was skipped
 	fn skip_whitespace(&mut self) {
 		let r = &mut self.src_reader;
-		while let Some(c) = r.advance_and_get_char() && matches!(c, c_whitespace_pat!()) { }
+		while let Some(c) = r.get_char() {
+			match c {
+				b'\n' => self.at_line_start = true,
+				b' ' | b'\t' | b'\x0b' | b'\x0c' => (),
+				_ => break
+			}
+			r.advance();
+		}
 	}
 
 	fn skip_comment(&mut self) {
@@ -268,4 +294,109 @@ impl<'src> Lexer<'src> {
 		}
 		todo!("Unterminated C89 comment");
 	}
+
+	fn skip_to_next_line(&mut self) {
+		let r = &mut self.src_reader;
+
+		while let Some(c) = r.get_char() {
+			if c == b'\n' {
+				// might as well skip all the remaining whitespaces while we're at it
+				while let Some(c) = r.advance_and_get_char() && matches!(c, c_whitespace_pat!()) { }
+				self.at_line_start = true;
+				return;
+			}
+			r.advance();
+		}
+	}
+
+	/// Parses a directive starting with #
+	/// note: this is NOT a preprocessor logic.
+	/// Therefore, it will only parse things like linemarkers or pragmas,
+	/// and error on the rest.
+	fn parse_directive(&mut self) {
+		if !self.at_line_start {
+			todo!("# Directive not on line start");
+		}
+		self.at_line_start = false;
+		self.in_directive = true;
+
+		// SAFETY: there should at least be the EOD token
+		let next_tok = unsafe { self.next().unwrap_unchecked() };
+		match next_tok.kind() {
+			TokenKind::EOD => (), // empty directive is not an error
+			TokenKind::Literal(lit) => self.parse_ident_directive(lit),
+			TokenKind::IntLit { value, suffix: IntLitSuffix::None } => {
+				let line_number: u32 = if let Ok(x) = value.try_into() { x } else {
+					todo!("Line constant too big");
+				};
+				self.parse_linemarker(line_number);
+			}
+			_ => todo!("Unexpected token while parsing directive: {:?}", next_tok.kind())
+		}
+	}
+
+	fn parse_ident_directive(&mut self, ident: &str) {
+		match ident {
+			"pragma" => self.skip_to_next_line(),
+			_ => todo!("Unknown PP directive `{}`", ident)
+		}
+	}
+
+	/// https://gcc.gnu.org/onlinedocs/gcc-11.1.0/cpp/Preprocessor-Output.html
+	fn parse_linemarker(&mut self, line_number: u32) {
+		// SAFETY: there should at least be the EOD token
+		let next_tok = unsafe { self.next().unwrap_unchecked() };
+		let file_name = match next_tok.kind() {
+			TokenKind::StringLit(f) => f,
+			TokenKind::EOD => { _mark_current_file(line_number); return; },
+			_ => todo!("Unexpeced token {:?}", next_tok.kind())
+		};
+
+		let mut try_parse_flag = || {
+			// SAFETY: there should at least be the EOD token
+			let next_tok = unsafe { self.next().unwrap_unchecked() };
+			match next_tok.kind() {
+				TokenKind::EOD => None,
+				TokenKind::IntLit { value, suffix: IntLitSuffix::None } => {
+					if value > 4 {
+						todo!("Linemarker flag too big");
+					}
+					Some(value as u8)
+				},
+				_ => todo!("Expected linemarker flag, got {:?}", next_tok.kind())
+			}
+		};
+
+		match try_parse_flag() {
+			Some(flag @ (1 | 2)) => {
+				let flag = if flag == 1 { MarkLineKind::StartNewFile } else { MarkLineKind::ReturningToFile };
+				_mark_line(line_number, file_name, flag);
+				self.skip_to_next_line();
+			},
+			// we don't care about 3 and 4
+			Some(_) => {
+				_mark_line(line_number, file_name, MarkLineKind::None);
+				self.skip_to_next_line();
+			},
+			None => _mark_line(line_number, file_name, MarkLineKind::None)
+		}
+	}
+}
+
+/// TODO: MOVE IN SOURCE_MANAGER LATER. THIS IS JUST A SKELETON.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkLineKind {
+	None,
+	StartNewFile,
+	ReturningToFile,
+}
+
+/// TODO: MOVE IN SOURCE_MANAGER LATER. THIS IS JUST A SKELETON.
+fn _mark_current_file(_line_number: u32) {
+	println!("CURRENT_FILE:{} MARKED", _line_number);
+}
+
+/// TODO: MOVE IN SOURCE_MANAGER LATER. THIS IS JUST A SKELETON.
+fn _mark_line(_line_number: u32, _file_name: &str, _kind: MarkLineKind) {
+	println!("{}:{} MARKED, {:?}", _file_name, _line_number, _kind);
 }

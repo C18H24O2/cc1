@@ -31,6 +31,8 @@ pub enum TokenKind<'a> {
 	Invalid,
 	/// The end of the source stream
 	EOF,
+	/// Emitted when finding a new-line while in a directive
+	EOD,
 
 	/// The literal `,`
 	Comma,
