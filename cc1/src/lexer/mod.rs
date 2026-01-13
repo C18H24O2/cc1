@@ -200,7 +200,7 @@ impl<'src> Lexer<'src> {
 	fn lex_identifier(&mut self) -> TokenKind<'src> {
 		let (slice, _) = self.fetch_source_while(|c| matches!(c, c_ident_pat!()));
 		// TODO: handle UTF-8
-		TokenKind::Literal(slice)
+		TokenKind::map_keyword_or_return_literal(slice)
 	}
 
 	fn lex_number(&mut self) -> TokenKind<'src> {

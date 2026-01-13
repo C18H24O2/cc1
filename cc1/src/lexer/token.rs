@@ -27,6 +27,7 @@ impl<'a> Token<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(non_camel_case_types)]
 pub enum TokenKind<'a> {
 	Invalid,
 	/// The end of the source stream
@@ -113,7 +114,57 @@ pub enum TokenKind<'a> {
 	/// The literal `[`
 	LBracket,
 	/// The literal `]`
-	RBracket
+	RBracket,
+
+	// All the C89 keywords (3.1.1 Keywords)
+	K_auto, K_double, K_int, K_struct,
+	K_break, K_else, K_long, K_switch,
+	K_case, K_enum, K_register, K_typedef,
+	K_char, K_extern, K_return, K_union,
+	K_const, K_float, K_short, K_unsigned,
+	K_continue, K_for, K_signed, K_void,
+	K_default, K_goto, K_sizeof, K_volatile,
+	K_do, K_if, K_static, K_while,
+}
+
+impl<'a> TokenKind<'a> {
+	pub fn map_keyword_or_return_literal(ident: &'a str) -> TokenKind<'a> {
+		match ident {
+			"auto" => TokenKind::K_auto,
+			"double" => TokenKind::K_double,
+			"int" => TokenKind::K_int,
+			"struct" => TokenKind::K_struct,
+			"break" => TokenKind::K_break,
+			"else" => TokenKind::K_else,
+			"long" => TokenKind::K_long,
+			"switch" => TokenKind::K_switch,
+			"case" => TokenKind::K_case,
+			"enum" => TokenKind::K_enum,
+			"register" => TokenKind::K_register,
+			"typedef" => TokenKind::K_typedef,
+			"char" => TokenKind::K_char,
+			"extern" => TokenKind::K_extern,
+			"return" => TokenKind::K_return,
+			"union" => TokenKind::K_union,
+			"const" => TokenKind::K_const,
+			"float" => TokenKind::K_float,
+			"short" => TokenKind::K_short,
+			"unsigned" => TokenKind::K_unsigned,
+			"continue" => TokenKind::K_continue,
+			"for" => TokenKind::K_for,
+			"signed" => TokenKind::K_signed,
+			"void" => TokenKind::K_void,
+			"default" => TokenKind::K_default,
+			"goto" => TokenKind::K_goto,
+			"sizeof" => TokenKind::K_sizeof,
+			"volatile" => TokenKind::K_volatile,
+			"do" => TokenKind::K_do,
+			"if" => TokenKind::K_if,
+			"static" => TokenKind::K_static,
+			"while" => TokenKind::K_while,
+			_ => TokenKind::Literal(ident)
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
