@@ -43,94 +43,98 @@ impl<'src> Iterator for Lexer<'src> {
 
 	#[inline]
 	fn next(&mut self) -> Option<Self::Item> {
-		let r = &mut self.src_reader;
+		// the loop statement is essentially a hack to mimic a goto.
+		// if we just want to skip some characters then lex again, call `continue`
+		// instead of making a recursive call
+		loop {
+			let r = &mut self.src_reader;
 
-		let location = r.get_source_location();
-		let chr = if let Some(c) = r.get_char() {
-			c
-		}
-		else if self.returned_eof_already {
-			return None;
-		}
-		else {
-			self.returned_eof_already = true;
-			return Some(Token::new(TokenKind::EOF, location));
-		};
+			let location = r.get_source_location();
+			let chr = if let Some(c) = r.get_char() {
+				c
+			}
+			else if !self.returned_eof_already {
+				self.returned_eof_already = true;
+				return Some(Token::new(TokenKind::EOF, location));
+			}
+			else {
+				return None;
+			};
 
-		let kind = match chr {
-			c_whitespace_pat!() => self.lex_whitespace(),
+			let kind = match chr {
+				c_whitespace_pat!() => { self.skip_whitespace(); continue; },
 
-			b'#' => { r.advance(); TokenKind::Hash },
+				b'#' => { r.advance(); TokenKind::Hash },
 
-			b',' => { r.advance(); TokenKind::Comma },
-			b'.' => match r.advance_and_get_char() {
-				Some(b'.') => match r.advance_and_get_char() {
-					Some(b'.') => TokenKind::DotDotDot,
-					_ => todo!("`..` is not a valid token")
+				b',' => { r.advance(); TokenKind::Comma },
+				b'.' => match r.advance_and_get_char() {
+					Some(b'.') => match r.advance_and_get_char() {
+						Some(b'.') => TokenKind::DotDotDot,
+						_ => todo!("`..` is not a valid token")
+					},
+					_ => TokenKind::Dot
 				},
-				_ => TokenKind::Dot
-			},
-			b';' => { r.advance(); TokenKind::Semicolon },
-			b':' => { r.advance(); TokenKind::Colon },
+				b';' => { r.advance(); TokenKind::Semicolon },
+				b':' => { r.advance(); TokenKind::Colon },
 
-			b'(' => { r.advance(); TokenKind::LParens },
-			b')' => { r.advance(); TokenKind::RParens },
-			b'[' => { r.advance(); TokenKind::LBracket },
-			b']' => { r.advance(); TokenKind::RBracket },
-			b'{' => { r.advance(); TokenKind::LCurly },
-			b'}' => { r.advance(); TokenKind::RCurly },
+				b'(' => { r.advance(); TokenKind::LParens },
+				b')' => { r.advance(); TokenKind::RParens },
+				b'[' => { r.advance(); TokenKind::LBracket },
+				b']' => { r.advance(); TokenKind::RBracket },
+				b'{' => { r.advance(); TokenKind::LCurly },
+				b'}' => { r.advance(); TokenKind::RCurly },
 
-			b'+' => match r.advance_and_get_char() {
-				Some(b'+') => { r.advance(); TokenKind::PlusPlus },
-				Some(b'=') => { r.advance(); TokenKind::PlusEq },
-				_ => TokenKind::Plus
-			},
-			
-			b'-' => match r.advance_and_get_char() {
-				Some(b'>') => { r.advance(); TokenKind::Arrow },
-				Some(b'-') => { r.advance(); TokenKind::MinusMinus },
-				Some(b'=') => { r.advance(); TokenKind::MinusEq },
-				_ => TokenKind::Minus
-			},
+				b'+' => match r.advance_and_get_char() {
+					Some(b'+') => { r.advance(); TokenKind::PlusPlus },
+					Some(b'=') => { r.advance(); TokenKind::PlusEq },
+					_ => TokenKind::Plus
+				},
+				
+				b'-' => match r.advance_and_get_char() {
+					Some(b'>') => { r.advance(); TokenKind::Arrow },
+					Some(b'-') => { r.advance(); TokenKind::MinusMinus },
+					Some(b'=') => { r.advance(); TokenKind::MinusEq },
+					_ => TokenKind::Minus
+				},
 
-			b'*' => match r.advance_and_get_char() {
-				Some(b'=') => { r.advance(); TokenKind::AsteriskEq },
-				_ => TokenKind::Asterisk
-			},
+				b'*' => match r.advance_and_get_char() {
+					Some(b'=') => { r.advance(); TokenKind::AsteriskEq },
+					_ => TokenKind::Asterisk
+				},
 
-			b'/' => match r.advance_and_get_char() {
-				Some(b'/') => todo!("Single line comment"),
-				Some(b'*') => todo!("Multi line comment"),
-				Some(b'=') => { r.advance(); TokenKind::SlashEq },
-				_ => TokenKind::Slash
-			},
+				b'/' => match r.advance_and_get_char() {
+					Some(b'*') => { r.advance(); self.skip_comment(); continue; },
+					Some(b'=') => { r.advance(); TokenKind::SlashEq },
+					_ => TokenKind::Slash
+				},
 
-			b'=' => match r.advance_and_get_char() {
-				Some(b'=') => { r.advance(); TokenKind::EqEq },
-				_ => TokenKind::Eq
-			},
+				b'=' => match r.advance_and_get_char() {
+					Some(b'=') => { r.advance(); TokenKind::EqEq },
+					_ => TokenKind::Eq
+				},
 
-			b'!' => match r.advance_and_get_char() {
-				Some(b'=') => { r.advance(); TokenKind::NotEq },
-				_ => TokenKind::Not
-			},
+				b'!' => match r.advance_and_get_char() {
+					Some(b'=') => { r.advance(); TokenKind::NotEq },
+					_ => TokenKind::Not
+				},
 
-			b'>' => match r.advance_and_get_char() {
-				Some(b'=') => { r.advance(); TokenKind::GtEq },
-				_ => TokenKind::Gt
-			},
+				b'>' => match r.advance_and_get_char() {
+					Some(b'=') => { r.advance(); TokenKind::GtEq },
+					_ => TokenKind::Gt
+				},
 
-			b'<' => match r.advance_and_get_char() {
-				Some(b'=') => { r.advance(); TokenKind::LtEq },
-				_ => TokenKind::Lt
-			},
-			
-			c_ident_start_pat!() => self.lex_identifier(),
-			c_integer_pat!() => self.lex_number(),
-			b'\'' | b'"' => self.lex_string(),
-			_ => panic!("Unhandled character {:?}", chr as char)
-		};
-		Some(Token::new(kind, location))
+				b'<' => match r.advance_and_get_char() {
+					Some(b'=') => { r.advance(); TokenKind::LtEq },
+					_ => TokenKind::Lt
+				},
+				
+				c_ident_start_pat!() => self.lex_identifier(),
+				c_integer_pat!() => self.lex_number(),
+				b'\'' | b'"' => self.lex_string(),
+				_ => panic!("Unhandled character {:?}", chr as char)
+			};
+			return Some(Token::new(kind, location))
+		}
 	}
 }
 
@@ -206,11 +210,6 @@ impl<'src> Lexer<'src> {
 		TokenKind::IntLit { value: repr, suffix: IntLitSuffix::None }
 	}
 
-	fn lex_whitespace(&mut self) -> TokenKind<'src> {
-		let (slice, _) = self.fetch_source_while(|c| matches!(c, c_whitespace_pat!()));
-		TokenKind::Whitespace(slice)
-	}
-
 	fn lex_string(&mut self) -> TokenKind<'src> {
 		let r = &mut self.src_reader;
 		// SAFETY: this function is private and only called when a string start has already been matched
@@ -245,5 +244,15 @@ impl<'src> Lexer<'src> {
 		else {
 			TokenKind::CharLit(slice)
 		}
+	}
+
+	#[inline]
+	fn skip_whitespace(&mut self) {
+		let r = &mut self.src_reader;
+		while let Some(c) = r.advance_and_get_char() && matches!(c, c_whitespace_pat!()) { }
+	}
+
+	fn skip_comment(&mut self) {
+		todo!();
 	}
 }

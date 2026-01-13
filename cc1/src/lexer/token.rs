@@ -49,10 +49,6 @@ pub enum TokenKind<'a> {
 	/// A character literal wrapped in single quotes (`'`)
 	CharLit(&'a str),
 
-	/// One of multiple whitespace characters. The representation
-	/// is kept because we may have to output it (e.g the -E flag)
-	Whitespace(&'a str),
-
 	/// A literal representing either a signed or unsigned integer with variable size
 	IntLit { value: u64, suffix: IntLitSuffix },
 	/// A literal representing either a float or double or long double
