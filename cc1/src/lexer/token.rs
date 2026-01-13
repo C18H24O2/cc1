@@ -32,11 +32,26 @@ pub enum TokenKind<'a> {
 	/// The end of the source stream
 	EOF,
 
+	/// The literal `,`
+	Comma,
+	/// The literal `.`
+	Dot,
+	/// The literal `...`
+	DotDotDot,
+	/// The literal `;`
+	Semicolon,
+	/// The literal `:`
+	Colon,
+
 	Literal(&'a str),
-	/// A literal wrapped in double quotes (`"`)
+	/// A string literal wrapped in double quotes (`"`)
 	StringLit(&'a str),
-	/// A single-character literal wrapped in single quotes (`'`)
-	CharLit(char),
+	/// A character literal wrapped in single quotes (`'`)
+	CharLit(&'a str),
+
+	/// One of multiple whitespace characters. The representation
+	/// is kept because we may have to output it (e.g the -E flag)
+	Whitespace(&'a str),
 
 	/// A literal representing either a signed or unsigned integer with variable size
 	IntLit { value: u64, signed: bool, suffix: IntLitSuffix },
@@ -48,14 +63,44 @@ pub enum TokenKind<'a> {
 
 	/// The literal `=`
 	Eq,
+	/// The literal `==`
+	EqEq,
+	/// The literal `!`
+	Not,
+	/// The literal `!=`
+	NotEq,
+	/// The literal `>`
+	Gt,
+	/// The literal `>=`
+	GtEq,
+	/// The literal `<`
+	Lt,
+	/// The literal `<=`
+	LtEq,
+
 	/// The literal `+`
 	Plus,
+	/// The literal `+=`
+	PlusEq,
+	/// The literal `++`
+	PlusPlus,
 	/// The literal `-`
 	Minus,
+	/// The literal `-=`
+	MinusEq,
+	/// The literal `--`
+	MinusMinus,
 	/// The literal `*`
 	Asterisk,
+	/// The literal `*=`
+	AsteriskEq,
 	/// The literal `/`
 	Slash,
+	/// The literal `/=`
+	SlashEq,
+
+	/// The literal `->`
+	Arrow,
 
 	/// The literal `(`
 	LParens,
