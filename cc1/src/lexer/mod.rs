@@ -1,7 +1,7 @@
 mod token;
 pub use token::{Token, TokenKind, IntLitSuffix, FloatLitSuffix};
 
-use crate::source_manager::{SourceManager, SourceReader};
+use crate::{diagnostics::Diag, source_manager::{SourceLocation, SourceManager, SourceReader}};
 
 pub struct Lexer<'src> {
 	src: &'src SourceManager<'src>,
@@ -79,7 +79,11 @@ impl<'src> Iterator for Lexer<'src> {
 				b'.' => match r.advance_and_get_char() {
 					Some(b'.') => match r.advance_and_get_char() {
 						Some(b'.') => { r.advance(); TokenKind::DotDotDot },
-						_ => todo!("`..` is not a valid token")
+						_ => {
+							r.advance();
+							self.diag(&location, Diag::err_dotdot_not_valid);
+							continue;
+						}
 					},
 					_ => TokenKind::Dot
 				},
@@ -141,7 +145,11 @@ impl<'src> Iterator for Lexer<'src> {
 				c_ident_start_pat!() => self.lex_identifier(),
 				c_integer_pat!() => self.lex_number(),
 				b'\'' | b'"' => self.lex_string(),
-				_ => panic!("Unhandled character {:?}", chr as char)
+				_ => {
+					r.advance();
+					self.diag(&location, Diag::err_unhandled_character);
+					continue;
+				}
 			};
 			if kind != TokenKind::EOD {
 				self.at_line_start = false;
@@ -152,7 +160,7 @@ impl<'src> Iterator for Lexer<'src> {
 }
 
 impl<'src> Lexer<'src> {
-	pub fn from(src: &'src SourceManager) -> Lexer<'src> {
+	pub fn from(src: &'src SourceManager<'src>) -> Lexer<'src> {
 		Lexer {
 			src,
 			src_reader: src.get_source_reader(),
@@ -160,6 +168,11 @@ impl<'src> Lexer<'src> {
 			at_line_start: true,
 			returned_eof_already: false
 		}
+	}
+
+	#[inline]
+	fn diag(&self, loc: &impl AsRef<SourceLocation>, diag: Diag<'src>) {
+		self.src.diagnostics_manager().diag(loc, diag, self.src);
 	}
 
 	/// Advances the reader's cursor until `f` returns `false` for the current character
@@ -227,6 +240,7 @@ impl<'src> Lexer<'src> {
 
 	fn lex_string(&mut self) -> TokenKind<'src> {
 		let r = &mut self.src_reader;
+		let loc = r.get_source_location();
 		// SAFETY: this function is private and only called when a string start has already been matched
 		let string_type = unsafe { r.get_char_unchecked() };
 		r.advance();
@@ -246,7 +260,8 @@ impl<'src> Lexer<'src> {
 			true
 		});
 		if end_of_file {
-			todo!("Unterminated string");
+			self.diag(&loc, Diag::err_unterminated_string);
+			return TokenKind::Invalid;
 		}
 		// consume the end quote character
 		// SAFETY: there is at least a quote character
@@ -276,6 +291,7 @@ impl<'src> Lexer<'src> {
 
 	fn skip_comment(&mut self) {
 		let r = &mut self.src_reader;
+		let loc = r.get_source_location();
 		let mut prev_is_star = false;
 		while let Some(c) = r.get_char_and_advance() {
 			if c == b'/' {
@@ -288,7 +304,7 @@ impl<'src> Lexer<'src> {
 				prev_is_star = c == b'*';
 			}
 		}
-		todo!("Unterminated C89 comment");
+		self.diag(&loc, Diag::err_unterminated_comment);
 	}
 
 	fn skip_to_next_line(&mut self) {
@@ -299,6 +315,7 @@ impl<'src> Lexer<'src> {
 				// might as well skip all the remaining whitespaces while we're at it
 				while let Some(c) = r.advance_and_get_char() && matches!(c, c_whitespace_pat!()) { }
 				self.at_line_start = true;
+				self.in_directive = false;
 				return;
 			}
 			r.advance();
@@ -311,7 +328,9 @@ impl<'src> Lexer<'src> {
 	/// and error on the rest.
 	fn parse_directive(&mut self) {
 		if !self.at_line_start {
-			todo!("# Directive not on line start");
+			self.diag(&self.src_reader.get_source_location(), Diag::err_directive_not_on_line_start);
+			self.skip_to_next_line();
+			return;
 		}
 		self.at_line_start = false;
 		self.in_directive = true;
@@ -320,22 +339,28 @@ impl<'src> Lexer<'src> {
 		let next_tok = unsafe { self.next().unwrap_unchecked() };
 		match next_tok.kind() {
 			TokenKind::EOD => (), // empty directive is not an error
-			TokenKind::Literal(lit) => self.parse_ident_directive(lit),
+			TokenKind::Literal(lit) => self.parse_ident_directive(lit, next_tok.location()),
 			TokenKind::IntLit { value, suffix: IntLitSuffix::None } => {
 				let line_number: u32 = if let Ok(x) = value.try_into() { x } else {
-					todo!("Line constant too big");
+					self.diag(&next_tok, Diag::err_line_marker_too_big);
+					self.skip_to_next_line();
+					return;
 				};
 				self.parse_linemarker(line_number);
 			}
-			_ => todo!("Unexpected token while parsing directive: {:?}", next_tok.kind())
+			_ => {
+				self.diag(&next_tok, Diag::err_unexpected_token_in_directive { tok: next_tok.kind() });
+				self.skip_to_next_line();
+			}
 		}
 	}
 
-	fn parse_ident_directive(&mut self, ident: &str) {
+	fn parse_ident_directive(&mut self, ident: &'src str, loc: SourceLocation) {
 		match ident {
-			"pragma" => self.skip_to_next_line(),
-			_ => todo!("Unknown PP directive `{}`", ident)
+			"pragma" => (),
+			_ => self.diag(&loc, Diag::err_unknown_directive { ident }),
 		}
+		self.skip_to_next_line();
 	}
 
 	/// https://gcc.gnu.org/onlinedocs/gcc-11.1.0/cpp/Preprocessor-Output.html
@@ -345,36 +370,54 @@ impl<'src> Lexer<'src> {
 		let file_name = match next_tok.kind() {
 			TokenKind::StringLit(f) => f,
 			TokenKind::EOD => { _mark_current_file(line_number); return; },
-			_ => todo!("Unexpeced token {:?}", next_tok.kind())
+			_ => {
+				self.diag(&next_tok, Diag::err_unexpected_token_in_linemarker { tok: next_tok.kind() });
+				self.skip_to_next_line();
+				return;
+			}
 		};
 
 		let mut try_parse_flag = || {
 			// SAFETY: there should at least be the EOD token
 			let next_tok = unsafe { self.next().unwrap_unchecked() };
 			match next_tok.kind() {
-				TokenKind::EOD => None,
+				TokenKind::EOD => Ok(0),
 				TokenKind::IntLit { value, suffix: IntLitSuffix::None } => {
 					if value > 4 {
-						todo!("Linemarker flag too big");
+						self.diag(&next_tok, Diag::err_linemarker_flag_too_big);
+						Err(None)
 					}
-					Some(value as u8)
+					else {
+						Ok(value as u8)
+					}
 				},
-				_ => todo!("Expected linemarker flag, got {:?}", next_tok.kind())
+				_ => Err(Some(next_tok))
 			}
 		};
 
 		match try_parse_flag() {
-			Some(flag @ (1 | 2)) => {
+			Ok(flag @ (1 | 2)) => {
 				let flag = if flag == 1 { MarkLineKind::StartNewFile } else { MarkLineKind::ReturningToFile };
 				_mark_line(line_number, file_name, flag);
 				self.skip_to_next_line();
 			},
+			
+			// EOD
+			Ok(0) => _mark_line(line_number, file_name, MarkLineKind::None),
+			
 			// we don't care about 3 and 4
-			Some(_) => {
+			Ok(_) => {
 				_mark_line(line_number, file_name, MarkLineKind::None);
 				self.skip_to_next_line();
 			},
-			None => _mark_line(line_number, file_name, MarkLineKind::None)
+			
+			Err(None) => self.skip_to_next_line(),
+			Err(Some(tok)) => {
+				self.diag(&tok, Diag::err_unexpected_token_in_linemarker { tok: tok.kind() });
+				if !matches!(tok.kind(), TokenKind::EOF) {
+					self.skip_to_next_line();
+				}
+			}
 		}
 	}
 }
