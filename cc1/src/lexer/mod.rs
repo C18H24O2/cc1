@@ -246,6 +246,7 @@ impl<'src> Lexer<'src> {
 		r.advance();
 
 		let mut is_escaping = false;
+		let mut is_string_unterminated_before_eol = false;
 
 		let (slice, end_of_file) = self.fetch_source_while(|c| {
 			if c == string_type {
@@ -254,12 +255,16 @@ impl<'src> Lexer<'src> {
 				}
 				is_escaping = false;
 			}
+			else if c == b'\n' {
+				is_string_unterminated_before_eol = true;
+				return false;
+			}
 			else {
 				is_escaping = c == b'\\' && !is_escaping;
 			}
 			true
 		});
-		if end_of_file {
+		if is_string_unterminated_before_eol || end_of_file {
 			self.diag(&loc, Diag::err_unterminated_string);
 			return TokenKind::Invalid;
 		}
