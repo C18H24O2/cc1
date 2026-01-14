@@ -26,6 +26,13 @@ impl<'a> Token<'a> {
 	}
 }
 
+impl<'a> AsRef<SourceLocation> for Token<'a> {
+	#[inline]
+	fn as_ref(&self) -> &SourceLocation {
+		&self.location
+	}
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum TokenKind<'a> {

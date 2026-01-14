@@ -29,6 +29,11 @@ impl<'src> SourceManager<'src> {
 		self.src
 	}
 
+	#[inline]
+	pub fn diagnostics_manager(&self) -> &DiagnosticsManager<'src> {
+		&self.diagnostics_manager
+	}
+
 	pub fn get_location_info(&self, _location: SourceLocation) -> SourceLocationInfo<'src> {
 		SourceLocationInfo {
 			file: "<uhh somewhere>",
@@ -146,6 +151,12 @@ struct FileRef<'src>(&'src str);
 /// source file, line number and column.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceLocation(usize);
+
+impl AsRef<SourceLocation> for SourceLocation {
+	fn as_ref(&self) -> &SourceLocation {
+		self
+	}
+}
 
 pub struct SourceLocationInfo<'src> {
 	pub file: &'src str,
