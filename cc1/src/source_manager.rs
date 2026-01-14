@@ -1,17 +1,21 @@
 use std::collections::HashSet;
 
+use crate::diagnostics::DiagnosticsManager;
+
 pub struct SourceManager<'src> {
 	/// The raw source
 	src: &'src str,
 	files: HashSet<FileRef<'src>>,
+	diagnostics_manager: DiagnosticsManager<'src>
 }
 
 impl<'src> SourceManager<'src> {
 	#[inline]
-	pub fn from(src: &'src str, top_file_name: &'src str) -> SourceManager<'src> {
+	pub fn from(src: &'src str, top_file_name: &'src str, diagnostics_manager: DiagnosticsManager<'src>) -> SourceManager<'src> {
 		SourceManager {
 			src,
-			files: HashSet::from([FileRef(top_file_name)])
+			files: HashSet::from([FileRef(top_file_name)]),
+			diagnostics_manager
 		}
 	}
 
@@ -23,6 +27,15 @@ impl<'src> SourceManager<'src> {
 	#[inline]
 	pub fn src(&self) -> &'src str {
 		self.src
+	}
+
+	pub fn get_location_info(&self, _location: SourceLocation) -> SourceLocationInfo<'src> {
+		SourceLocationInfo {
+			file: "<uhh somewhere>",
+			line_num: 0,
+			column_num: 0,
+			line: "idk"
+		}
 	}
 }
 
@@ -133,3 +146,10 @@ struct FileRef<'src>(&'src str);
 /// source file, line number and column.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceLocation(usize);
+
+pub struct SourceLocationInfo<'src> {
+	pub file: &'src str,
+	pub line_num: usize,
+	pub column_num: usize,
+	pub line: &'src str,
+}
