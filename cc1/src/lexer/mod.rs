@@ -78,7 +78,7 @@ impl<'src> Iterator for Lexer<'src> {
 				b',' => { r.advance(); TokenKind::Comma },
 				b'.' => match r.advance_and_get_char() {
 					Some(b'.') => match r.advance_and_get_char() {
-						Some(b'.') => TokenKind::DotDotDot,
+						Some(b'.') => { r.advance(); TokenKind::DotDotDot },
 						_ => todo!("`..` is not a valid token")
 					},
 					_ => TokenKind::Dot
